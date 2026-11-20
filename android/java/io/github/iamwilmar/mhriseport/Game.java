@@ -10,7 +10,7 @@ final class Game {
     static final String VERSION = "16.0.1";
     static final String BUILD_ID = "55d50ca1805e9c5bba508d601add852f255a32ba";
     static final String ROMFS_MARKER = "re_chunk_000.pak";  // relative to the RomFS root
-    static final String UPDATE_MARKER = "re_chunk_000.pak.patch_015.pak";  // only present with the update applied (null: not checked)
+    static final String UPDATE_MARKER = null;  // update marker not checked (was "re_chunk_000.pak.patch_015.pak" for 16.0.1)
     static final String DLC_MARKER = "re_dlc_000.pak";  // in the root of each DLC RomFS (null: game without DLC)
 
     private Game() {}

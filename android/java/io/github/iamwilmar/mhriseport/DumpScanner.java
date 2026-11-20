@@ -94,10 +94,8 @@ final class DumpScanner {
         if (le(npdm, aci + 0x10, 8) != Game.APP_ID) {
             if (result.exefsProblem == null)
                 result.exefsProblem = "The ExeFS in \"" + dir.getName() + "\" belongs to a different game.";
-        } else if (!build.toString().equals(Game.BUILD_ID)) {
-            result.exefsProblem = "The ExeFS is from a different game version: this port needs " + Game.VERSION
-                    + ". Extract it again with update " + Game.VERSION + " installed.";
         } else {
+            // Version restriction removed: any build ID is accepted (was: must equal Game.BUILD_ID).
             result.exefs = dir.getPath();
             result.exefsProblem = null;
         }
