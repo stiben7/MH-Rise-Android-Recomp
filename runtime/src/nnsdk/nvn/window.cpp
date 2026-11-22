@@ -370,8 +370,17 @@ LsfgPacer g_lsfg_pacer;
 // 7,5 y 60 fps el juego va a su velocidad (no a cámara lenta como NieR), pero forzar el intervalo 1 al presentar no
 // basta para 60: el limitador del juego seguía en 30. Con <datos>/60fps se le pone MaxFps 60 en cada present (el juego lo
 // vuelve a poner en 30 al cambiar de escena) y al quitarlo se le devuelve lo suyo.
-constexpr size_t kAppPointer = 0x12950348;      // via.Application* (dato de main)
-constexpr size_t kLimiterLoad = 0x6b04828;      // ldr s1, [x19, #0x434]: el MaxFps que lee el limitador
+// Offsets por versión del main (el código del reloj es el mismo; solo se mueven las direcciones). Se elige la primera
+// cuyo `ldr s1, [x19, #0x434]` (el MaxFps que lee el limitador) está donde toca.
+struct ClockLayout {
+    const char* version;
+    size_t app_pointer;   // via.Application* (dato de main)
+    size_t limiter_load;  // ldr s1, [x19, #0x434]
+};
+constexpr ClockLayout kClockLayouts[] = {
+    {"16.0.1", 0x12950348, 0x6b04828},
+    {"16.0.2", 0x1295b3f0, 0x6b10758},
+};
 constexpr uint32_t kLimiterLoadCode = 0xBD443661;
 struct GameClock {  // App+0x41c..0x434
     float dt60, frame_ms, dt, unused[2], base, max_fps;
@@ -380,14 +389,19 @@ static_assert(sizeof(GameClock) == 0x434 + 4 - 0x41c);
 
 GameClock* game_clock() {
     static const uint8_t* base = nnsdk::host().main_base;
-    static const bool known = [] {
-        const bool ok = base && nnsdk::host().main_size > kAppPointer + 8 &&
-                        *reinterpret_cast<const uint32_t*>(base + kLimiterLoad) == kLimiterLoadCode;
-        NVN_LOG("reloj del juego: %s\n", ok ? "MH Rise 16.0.1 (App en main+0x12950348)" : "no es el main conocido: sin tocar MaxFps");
-        return ok;
+    static const ClockLayout* layout = [] () -> const ClockLayout* {
+        for (const ClockLayout& l : kClockLayouts) {
+            if (base && nnsdk::host().main_size > l.app_pointer + 8 && nnsdk::host().main_size > l.limiter_load + 4 &&
+                *reinterpret_cast<const uint32_t*>(base + l.limiter_load) == kLimiterLoadCode) {
+                NVN_LOG("reloj del juego: MH Rise %s (App en main+%#zx)\n", l.version, l.app_pointer);
+                return &l;
+            }
+        }
+        NVN_LOG("reloj del juego: no es el main conocido: sin tocar MaxFps\n");
+        return nullptr;
     }();
-    if (!known) return nullptr;
-    const uint64_t app = *reinterpret_cast<const volatile uint64_t*>(base + kAppPointer);
+    if (!layout) return nullptr;
+    const uint64_t app = *reinterpret_cast<const volatile uint64_t*>(base + layout->app_pointer);
     if (!app) return nullptr;  // aún sin via.Application
     auto* c = reinterpret_cast<GameClock*>(app + 0x41c);
     return c->base == 60.0f ? c : nullptr;
