@@ -126,13 +126,11 @@ const uint8_t* known_main() {
             }
             if (!ok) continue;
             g_layout = &l;
-            NVN_LOG("game settings: MH Rise %s (shadows, model detail, texture detail and renderer switches available)
-",
+            NVN_LOG("game settings: MH Rise %s (shadows, model detail, texture detail and renderer switches available)\n",
                     l.version);
             return b;
         }
-        NVN_LOG("game settings: not a known main, leaving the game's settings alone
-");
+        NVN_LOG("game settings: not a known main, leaving the game's settings alone\n");
         return nullptr;
     }();
     return base;

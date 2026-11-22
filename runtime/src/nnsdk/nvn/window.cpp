@@ -478,14 +478,12 @@ volatile float* game_quality_rate() {
             const auto* code = reinterpret_cast<const uint32_t*>(base + l.rate_setter);
             if (code[0] == l.rate_setter_code[0] && code[1] == l.rate_setter_code[1] && code[2] == l.rate_setter_code[2] &&
                 *reinterpret_cast<const uint32_t*>(base + l.rate_load) == kRateLoadCode) {
-                NVN_LOG("resolución dinámica: MH Rise %s (Renderer en main+%#zx, ImageQualityRate en +0x1a78)
-", l.version,
+                NVN_LOG("resolución dinámica: MH Rise %s (Renderer en main+%#zx, ImageQualityRate en +0x1a78)\n", l.version,
                         l.renderer_pointer);
                 return &l;
             }
         }
-        NVN_LOG("resolución dinámica: no es el main conocido: sin tocar la resolución
-");
+        NVN_LOG("resolución dinámica: no es el main conocido: sin tocar la resolución\n");
         return nullptr;
     }();
     if (!layout) return nullptr;
