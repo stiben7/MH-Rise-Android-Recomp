@@ -1,4 +1,4 @@
-// Graphics settings that live in the game itself (via.render.RenderConfig and friends), for MH Rise 16.0.1 only.
+// Graphics settings that live in the game itself (via.render.RenderConfig and friends), for MH Rise 16.0.1 and 16.0.2 (the addresses in the text below are 16.0.1's).
 // The PC version shows these in its options menu; the Switch build has the same code and just never changes them.
 // Everything is found through the engine's reflection table (the get_/set_ names RenderConfig registers) and the
 // setters it points to:
@@ -29,6 +29,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <iterator>
 #include <string>
 
 #include "nnsdk/nvn/commands.h"
@@ -41,20 +42,30 @@ namespace nvn {
 
 namespace {
 
-constexpr size_t kRendererPointer = 0x12950538;  // via.render.Renderer*
-constexpr size_t kShadowPointer = 0x12950580;    // the shadow system (what set_ShadowQuality talks to)
-constexpr size_t kLodPointer = 0x12950568;       // mesh LOD state (set_MeshQuality, set_ShaderLodGlobalValue)
-
-constexpr size_t kShadowSetter = 0x7564f1c;  // void (shadows*, uint32_t size)
-constexpr size_t kShadowSize = 348;
-constexpr size_t kLodRate0 = 60, kLodRate1 = 64;  // float, LOD mode 0 and 1
-constexpr size_t kTextureBias = 6728;             // uint32_t, Renderer
-
 struct Check {
     size_t at;
     uint32_t code;
 };
-constexpr Check kChecks[] = {
+// What moves between builds of main: where the game keeps its objects, the setters we call and the instructions that
+// prove we're looking at that build. The code itself is the same in both; only the addresses (and the GOT offsets the
+// code loads them through) differ.
+struct Layout {
+    const char* version;
+    size_t renderer_pointer;        // via.render.Renderer*
+    size_t shadow_pointer;          // the shadow system (what set_ShadowQuality talks to)
+    size_t lod_pointer;             // mesh LOD state (set_MeshQuality, set_ShaderLodGlobalValue)
+    size_t shadow_setter;           // void (shadows*, uint32_t size)
+    size_t dynamic_shadow_setter;   // void (Renderer*, bool)
+    size_t occlusion_got;           // GPU occlusion culling: UseGpuOcclusionCulling, byte +0x1d of the object behind this GOT entry
+    const Check* checks;
+    size_t check_count;
+};
+
+constexpr size_t kShadowSize = 348;
+constexpr size_t kLodRate0 = 60, kLodRate1 = 64;  // float, LOD mode 0 and 1
+constexpr size_t kTextureBias = 6728;             // uint32_t, Renderer
+
+constexpr Check kChecks1601[] = {
     {0x7564f1c, 0xF81E0FF3},  // str x19, [sp, #-32]!     (shadow size setter)
     {0x7564f28, 0xB9415C08},  // ldr w8, [x0, #348]
     {0x7564f40, 0xB9015C01},  // str w1, [x0, #348]
@@ -74,26 +85,55 @@ constexpr Check kChecks[] = {
     {0x72878, 0xF9468508},    // ldr x8, [x8, #0xd08]     (get_UseGpuOcclusionCulling: its GOT entry)
     {0x72880, 0x39407508},    // ldrb w8, [x8, #0x1d]
 };
-constexpr size_t kDynamicShadowSetter = 0x7930a18;  // void (Renderer*, bool)
-
-// GPU occlusion culling: UseGpuOcclusionCulling, byte +0x1d of the object behind GOT main+0x12674d08 (the loader fills
-// the entry: entry -> global variable -> object; get_ thunk main+0x72874)
-constexpr size_t kOcclusionGot = 0x12674d08;
+// 16.0.2 (build ID c9a3dd77...): the same code, 0xc020 / 0xc070 further on, and the data 0xb0a8 further on
+constexpr Check kChecks1602[] = {
+    {0x7570f3c, 0xF81E0FF3},  // shadow size setter
+    {0x7570f48, 0xB9415C08},
+    {0x7570f60, 0xB9015C01},
+    {0x78acc88, 0xF9431513},  // ldr x19, [x8, #0x628]   (set_ShadowQuality)
+    {0x7473ae8, 0xBD003C00},  // LOD rate, mode 0
+    {0x7473af0, 0xBD004000},  // LOD rate, mode 1
+    {0x78acdb0, 0xF9430908},  // ldr x8, [x8, #0x610]    (set_MeshQuality)
+    {0x78ad0fc, 0xF942F108},  // ldr x8, [x8, #0x5e0]    (set_TextureLoadLevelBias)
+    {0x78ad10c, 0xB91A4909},  // str w9, [x8, #6728]
+    {0x5a750, 0x52834B2A},
+    {0x5a778, 0x52834ACA},
+    {0x793ca88, 0x52834AA8},  // set_DynamicShadowEnable
+    {0x5a5d0, 0xB91A6928},
+    {0x5a2b8, 0xB91A8D28},
+    {0x5a6e8, 0xBD1A3100},
+    {0x59f90, 0xBD1A4500},
+    {0x72878, 0xF940BD08},    // ldr x8, [x8, #0x178]    (get_UseGpuOcclusionCulling: its GOT entry)
+    {0x72880, 0x39407508},
+};
+constexpr Layout kLayouts[] = {
+    {"16.0.1", 0x12950538, 0x12950580, 0x12950568, 0x7564f1c, 0x7930a18, 0x12674d08, kChecks1601, std::size(kChecks1601)},
+    {"16.0.2", 0x1295b5e0, 0x1295b628, 0x1295b610, 0x7570f3c, 0x793ca88, 0x12680178, kChecks1602, std::size(kChecks1602)},
+};
+const Layout* g_layout = nullptr;
 
 const uint8_t* known_main() {
     static const uint8_t* base = [] () -> const uint8_t* {
         const uint8_t* b = nnsdk::host().main_base;
-        if (!b || nnsdk::host().main_size <= kShadowPointer + 8) return nullptr;
-        for (const Check& c : kChecks) {
-            uint32_t w;
-            memcpy(&w, b + c.at, 4);
-            if (w != c.code) {
-                NVN_LOG("game settings: main+%#zx doesn't match 16.0.1, leaving the game's settings alone\n", c.at);
-                return nullptr;
+        if (!b) return nullptr;
+        for (const Layout& l : kLayouts) {
+            if (nnsdk::host().main_size <= l.shadow_pointer + 8) continue;
+            bool ok = true;
+            for (size_t i = 0; ok && i < l.check_count; i++) {
+                uint32_t w;
+                memcpy(&w, b + l.checks[i].at, 4);
+                ok = w == l.checks[i].code;
             }
+            if (!ok) continue;
+            g_layout = &l;
+            NVN_LOG("game settings: MH Rise %s (shadows, model detail, texture detail and renderer switches available)
+",
+                    l.version);
+            return b;
         }
-        NVN_LOG("game settings: MH Rise 16.0.1 (shadows, model detail, texture detail and renderer switches available)\n");
-        return b;
+        NVN_LOG("game settings: not a known main, leaving the game's settings alone
+");
+        return nullptr;
     }();
     return base;
 }
@@ -155,7 +195,7 @@ void write_status() {
 }
 
 void shadows(const uint8_t* base) {
-    uint8_t* sys = object_at<uint8_t>(base, kShadowPointer);
+    uint8_t* sys = object_at<uint8_t>(base, g_layout->shadow_pointer);
     if (!sys) return;
     auto* size = reinterpret_cast<volatile uint32_t*>(sys + kShadowSize);
     static uint32_t game_size = 0;  // what the game had before we touched it
@@ -168,14 +208,14 @@ void shadows(const uint8_t* base) {
     g_status.shadow = *size, g_status.shadow_game = game_size;
     if (*size == target) return;
     using Setter = void (*)(void*, uint32_t);
-    reinterpret_cast<Setter>(const_cast<uint8_t*>(base) + kShadowSetter)(sys, target);
+    reinterpret_cast<Setter>(const_cast<uint8_t*>(base) + g_layout->shadow_setter)(sys, target);
     NVN_LOG("game settings: shadow maps %u -> %u (game default %u)\n", ours ? ours : game_size, target, game_size);
     ours = divisor > 1 ? target : 0;
     g_status.shadow = *size;
 }
 
 void model_detail(const uint8_t* base) {
-    uint8_t* lod = object_at<uint8_t>(base, kLodPointer);
+    uint8_t* lod = object_at<uint8_t>(base, g_layout->lod_pointer);
     if (!lod) return;
     auto* rate = reinterpret_cast<volatile float*>(lod + kLodRate0);
     auto* rate1 = reinterpret_cast<volatile float*>(lod + kLodRate1);
@@ -202,7 +242,7 @@ void model_detail(const uint8_t* base) {
 }
 
 void texture_detail(const uint8_t* base) {
-    uint8_t* renderer = object_at<uint8_t>(base, kRendererPointer);
+    uint8_t* renderer = object_at<uint8_t>(base, g_layout->renderer_pointer);
     if (!renderer) return;
     auto* bias = reinterpret_cast<volatile uint32_t*>(renderer + kTextureBias);
     static uint32_t game = 0, ours = ~0u;
@@ -270,7 +310,7 @@ ByteSwitch g_sway{"foliage sway", 0x1a59, 0};
 ByteSwitch g_sway_shadow{"foliage sway in shadows", 0x1a56, 0};
 
 void renderer_switches(const uint8_t* base) {
-    uint8_t* renderer = object_at<uint8_t>(base, kRendererPointer);
+    uint8_t* renderer = object_at<uint8_t>(base, g_layout->renderer_pointer);
     if (!renderer) return;
     const bool no_sway = NVN_FLAG("no_foliage_sway");
     byte_switch(renderer, g_sway, no_sway);
@@ -287,7 +327,7 @@ void renderer_switches(const uint8_t* base) {
     const uint8_t target = off ? 0 : game_dynamic;
     if (*dynamic != target) {
         using Setter = void (*)(void*, bool);
-        reinterpret_cast<Setter>(const_cast<uint8_t*>(base) + kDynamicShadowSetter)(renderer, target != 0);
+        reinterpret_cast<Setter>(const_cast<uint8_t*>(base) + g_layout->dynamic_shadow_setter)(renderer, target != 0);
         NVN_LOG("game settings: dynamic shadows %u (game's %u)\n", target, game_dynamic);
     }
     ours = off;
@@ -339,7 +379,7 @@ ByteSwitch g_gpu_occlusion{"GPU occlusion culling", 0x1d, 0};
 void culling_switches(const uint8_t* base) {
     static const bool mali = nvn::vk() && nvn::vk()->props.vendorID == 0x13B5;
     const bool off = NVN_FLAG("no_gpu_occlusion") || (mali && !NVN_FLAG("gpu_occlusion"));
-    if (uint8_t* occ = got_object(base, kOcclusionGot)) byte_switch(occ, g_gpu_occlusion, off);
+    if (uint8_t* occ = got_object(base, g_layout->occlusion_got)) byte_switch(occ, g_gpu_occlusion, off);
 }
 
 }  // namespace

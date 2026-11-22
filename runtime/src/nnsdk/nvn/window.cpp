@@ -424,12 +424,19 @@ GameClock* game_clock() {
 // profundidad y el resto de la escena ya son de 1280x720, así que el ratio puede subir hasta llenarla. <datos>/resolution_576,
 // resolution_648 o resolution_720: la escena a 1024x576, 1152x648 o 1280x720 (720p de verdad, sin escalar del juego), y
 // la dinámica baja desde ahí con los mismos pasos. Sin ninguno, 960x540 como el juego.
-constexpr size_t kRendererPointer = 0x12950538;  // via.render.Renderer* (dato de main)
+struct RateLayout {
+    const char* version;
+    size_t renderer_pointer;  // via.render.Renderer* (dato de main)
+    size_t rate_setter;       // set_ImageQualityRate: adrp/ldr del Renderer y str s0, [x8, #0x1a78]
+    uint32_t rate_setter_code[3];
+    size_t rate_load;         // ldr s1, [x8, #0x1a78] en la actualización de RenderOutput
+};
 constexpr size_t kRateField = 0x1a78;
-constexpr size_t kRateSetter = 0x78a0ea0;  // set_ImageQualityRate: adrp/ldr del Renderer y str s0, [x8, #0x1a78]
-constexpr uint32_t kRateSetterCode[3] = {0x90058588, 0xF9429D08, 0xBD1A7900};
-constexpr size_t kRateLoad = 0x7936e20;  // ldr s1, [x8, #0x1a78] en la actualización de RenderOutput
 constexpr uint32_t kRateLoadCode = 0xBD5A7901;
+constexpr RateLayout kRateLayouts[] = {
+    {"16.0.1", 0x12950538, 0x78a0ea0, {0x90058588, 0xF9429D08, 0xBD1A7900}, 0x7936e20},
+    {"16.0.2", 0x1295b5e0, 0x78acec0, {0xF0058568, 0xF942F108, 0xBD1A7900}, 0x7942e90},
+};
 constexpr float kRates[] = {1.0f, 0.93334f, 0.86667f, 0.80001f, 0.73334f};  // un poco por encima: floor no pierde un píxel
 constexpr int kLevels = static_cast<int>(std::size(kRates));
 
@@ -465,17 +472,24 @@ DynamicResolution g_dynres;
 
 volatile float* game_quality_rate() {
     static const uint8_t* base = nnsdk::host().main_base;
-    static const bool known = [] {
-        const auto* code = reinterpret_cast<const uint32_t*>(base + kRateSetter);
-        const bool ok = base && nnsdk::host().main_size > kRendererPointer + 8 && code[0] == kRateSetterCode[0] &&
-                        code[1] == kRateSetterCode[1] && code[2] == kRateSetterCode[2] &&
-                        *reinterpret_cast<const uint32_t*>(base + kRateLoad) == kRateLoadCode;
-        NVN_LOG("resolución dinámica: %s\n", ok ? "MH Rise 16.0.1 (Renderer en main+0x12950538, ImageQualityRate en +0x1a78)"
-                                                : "no es el main conocido: sin tocar la resolución");
-        return ok;
+    static const RateLayout* layout = [] () -> const RateLayout* {
+        for (const RateLayout& l : kRateLayouts) {
+            if (!base || nnsdk::host().main_size <= l.renderer_pointer + 8) continue;
+            const auto* code = reinterpret_cast<const uint32_t*>(base + l.rate_setter);
+            if (code[0] == l.rate_setter_code[0] && code[1] == l.rate_setter_code[1] && code[2] == l.rate_setter_code[2] &&
+                *reinterpret_cast<const uint32_t*>(base + l.rate_load) == kRateLoadCode) {
+                NVN_LOG("resolución dinámica: MH Rise %s (Renderer en main+%#zx, ImageQualityRate en +0x1a78)
+", l.version,
+                        l.renderer_pointer);
+                return &l;
+            }
+        }
+        NVN_LOG("resolución dinámica: no es el main conocido: sin tocar la resolución
+");
+        return nullptr;
     }();
-    if (!known) return nullptr;
-    const uint64_t renderer = *reinterpret_cast<const volatile uint64_t*>(base + kRendererPointer);
+    if (!layout) return nullptr;
+    const uint64_t renderer = *reinterpret_cast<const volatile uint64_t*>(base + layout->renderer_pointer);
     return renderer ? reinterpret_cast<volatile float*>(renderer + kRateField) : nullptr;
 }
 
