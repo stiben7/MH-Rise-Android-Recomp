@@ -66,7 +66,7 @@ cp "$ROOT/android/assets/citrus_curves.bin" "$STAGE/assets/"
 MANIFEST="$ROOT/android/AndroidManifest.xml" RENAME=()
 if [ -n "$PACKAGE" ]; then
   MANIFEST="$STAGE/AndroidManifest.xml"
-  sed "s|android:label=\"MH Rise port\"|android:label=\"${LABEL:-MH Rise port ($PACKAGE)}\"|" \
+  sed "s|android:label=\"MH Rise Android Recomp\"|android:label=\"${LABEL:-MH Rise Android Recomp ($PACKAGE)}\"|" \
     "$ROOT/android/AndroidManifest.xml" > "$MANIFEST"
   RENAME=(--rename-manifest-package "$PACKAGE")
 fi

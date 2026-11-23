@@ -10,6 +10,8 @@ console it talks to (files, threads, input, audio, and the NVN graphics API on t
 > belong to their owners. This repository has **no game code and no game assets**: you need a copy of the game you
 > bought, with its files extracted on your own console.
 
+**This build** is tuned for the Snapdragon 8 Gen 2 (Adreno 740, tested on an Odin 2 Portal with the Turnip T30 driver): steady ~45 fps with the FPS limit set to 45 and mesh detail lowered, Sunbreak DLC and Steam-save support, and settings from the in-game menu that apply live without restarting. It's a fork of [klark231/mhrise-recomp](https://github.com/klark231/mhrise-recomp).
+
 This started as [IamWilmar's port](https://github.com/IamWilmar/mhrise-recomp) for the Retroid Pocket 5 and Flip 2
 (Snapdragon 865). This fork takes it to phones in general: other Adrenos, Mali, Xclipse and PowerVR, stock drivers
 and custom ones, high end and low end.
