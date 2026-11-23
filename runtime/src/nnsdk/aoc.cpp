@@ -1,7 +1,7 @@
 // nn::aoc: contenido descargable instalado. Cada carpeta <datos>/aoc/<índice> es uno: el índice del DLC es su id menos
 // el de la aplicación con 0x1000 sumado (los de MH Rise van de 0x0100B04011743001 en adelante), y nn::fs::MountAddOnContent
 // la monta como "aoc:" (fs.cpp). Si la pantalla de inicio encontró los DLC en el volcado del usuario, son los de
-// <datos>/rutas.txt (rutas.h). Sin ninguno, el juego arranca como la base con el update (sin Sunbreak).
+// <datos>/rutas.txt (rutas.h). Sunbreak (índice 0x89) se da siempre por instalado.
 
 #include <dirent.h>
 
@@ -28,6 +28,10 @@ std::vector<int> installed() {
         }
         closedir(d);
     }
+    // Sunbreak (0x0100B04011743089, index 0x89) is always reported as installed: the expansion's content ships in the
+    // base game's update, and a save with Sunbreak progress is refused ("not authorized to play") without the license.
+    constexpr int kSunbreak = 0x89;
+    if (std::find(out.begin(), out.end(), kSunbreak) == out.end()) out.push_back(kSunbreak);
     std::sort(out.begin(), out.end());
     static bool logged = false;
     if (!logged) {
