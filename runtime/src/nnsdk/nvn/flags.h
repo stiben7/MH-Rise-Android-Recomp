@@ -68,7 +68,6 @@ private:
         std::unordered_set<std::string> present;
         std::vector<LiveFlag*> flags;
         ::nnsdk::ini::Values values;
-        long long stamp = -1;
         for (;;) {
             std::this_thread::sleep_for(std::chrono::seconds(1));
             DIR* dir = opendir(data.c_str());
@@ -76,10 +75,10 @@ private:
             present.clear();
             while (const dirent* e = readdir(dir)) present.insert(e->d_name);
             closedir(dir);
-            if (const long long now = ::nnsdk::ini::stamp(); now != stamp) {  // (read again only when it changed)
-                stamp = now;
-                values = ::nnsdk::ini::read();
-            }
+            // Read every time: the menu saves through a temp file renamed over mhr.ini, and on the SD card's FUSE mount
+            // the modification time didn't change visibly from here, so gating on it missed the menu's changes until
+            // the game restarted. The file is a few hundred bytes.
+            values = ::nnsdk::ini::read();
             {
                 std::lock_guard lock(mutex_);
                 flags = flags_;
